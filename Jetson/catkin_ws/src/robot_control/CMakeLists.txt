@@ -55,6 +55,7 @@ find_package(catkin REQUIRED COMPONENTS
 add_message_files(
   FILES
   I2cData.msg
+  UARTData.msg
   VelocityData.msg
 )
 
@@ -171,6 +172,7 @@ target_link_libraries(joycontrol
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
   scripts/i2c_master.py
+  scripts/uart_comm.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

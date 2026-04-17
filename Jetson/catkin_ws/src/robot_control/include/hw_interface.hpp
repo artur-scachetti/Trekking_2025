@@ -2,22 +2,25 @@
 #define ROBOT_HW_INTERFACE_HPP
 
 #include <ros/ros.h>
-#include <geometry_msgs/Twist.h>
-#include "robot_control/VelocityData.h"
-#include <nav_msgs/Odometry.h>
-#include <geometry_msgs/Quaternion.h>
-#include <geometry_msgs/Point.h>
-#include "robot_control/I2cData.h" 
+#include <cmath>
 #include <tf/transform_broadcaster.h>
 #include <tf/tf.h>
-#include <unistd.h> // adicionado
-#include <iostream> // adicionado
-#include <string.h> // adicionado
-#include <chrono> // adicionado
-#include <cmath>
-#include <geometry_msgs/TransformStamped.h>
+#include <unistd.h> 
+#include <iostream> 
+#include <string.h>
+#include <chrono>
 
+#include <geometry_msgs/Twist.h>
+#include <geometry_msgs/Quaternion.h>
+#include <geometry_msgs/Point.h>
+#include <geometry_msgs/TransformStamped.h>
+#include <nav_msgs/Odometry.h>
+#include <sensor_msgs/Imu.h>
 #include <ackermann_msgs/AckermannDrive.h>
+
+#include "robot_control/VelocityData.h"
+#include "robot_control/I2cData.h"
+#include "robot_control/UARTData.h"
 
 
 //hw params
@@ -30,9 +33,11 @@ class RobotHWInterface {
 public:
     RobotHWInterface(ros::NodeHandle& nh); // Ajustado para receber NodeHandle por referência
     //void cmdVelCallback(const geometry_msgs::Twist::ConstPtr& msg);
+    void imuDataCallback(const sensor_msgs::Imu::ConstPtr& msg);
     void AckermannDriveCallback(const ackermann_msgs::AckermannDrive::ConstPtr& msg);
     void publishWheelSpeeds(); // Publicando velocidades do cmd_vel
-    void encoderCallback(const robot_control::I2cData::ConstPtr& msg); // Callback para os dados do encoder
+    void encoderCallbackI2C(const robot_control::I2cData::ConstPtr& msg); // Callback para os dados do encoder
+    void encoderCallbackUart(const robot_control::UARTData::ConstPtr& msg);
     void commandTimeoutCallback(const ros::TimerEvent&); // Callback para o timeout
     void updateWheelSpeedForDeceleration(); // Desaceleração
     void updateOdometry();
@@ -46,6 +51,7 @@ private:
     ros::Publisher velocity_command_pub;
     //ros::Subscriber cmd_vel_sub;
     ros::Subscriber ack_drive_sub;
+    ros::Subscriber imu_sub;
 
     // Odometria
     ros::Subscriber encoder_sub;
@@ -86,6 +92,11 @@ private:
 
     double base_vel_linear;
     double base_vel_angular;
+
+    double imu_yaw = 0.0;
+    double imu_angular_vel_z = 0.0;
+    double imu_initial_offset = 0.0;
+    bool imu_initialized = false;
 
     // Angulo do servo
     double servo_angle;

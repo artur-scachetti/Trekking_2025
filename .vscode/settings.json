@@ -1,3 +1,4 @@
 {
-    "cmake.sourceDirectory": "/home/matheus-mt/Documents/semear/Trekking_2025/Esp32/Esp_Firmware"
+    "cmake.sourceDirectory": "/home/artur/Documentos/Trekking/Esp32/Esp_Firmware",
+    "C_Cpp.errorSquiggles": "disabled"
 }

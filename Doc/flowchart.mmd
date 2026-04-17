@@ -1,0 +1,82 @@
+flowchart LR
+    %% Configurações de Estilo (Paleta de cores moderna)
+    classDef pc fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#000,rx:8px,ry:8px
+    classDef esp fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000,rx:8px,ry:8px
+    classDef topic fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000,rx:20px,ry:20px
+    classDef func fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px,color:#000,shape:hexagon
+    classDef hw fill:#ffebee,stroke:#d32f2f,stroke-width:2px,color:#000
+    classDef serial fill:#eceff1,stroke:#546e7a,stroke-width:3px,color:#000,stroke-dasharray: 5 5
+
+    subgraph Layer_ROS ["💻 Camada ROS (RaspPi)"]
+        direction TB
+        HW2[Hardware Interface]:::pc
+        UComm["uart_comm.py"]:::pc
+        
+        %% Funções Internas
+        RL{"read_loop()"}:::func
+        CBVel{"callback_vel()"}:::func
+        
+        %% Tópicos
+        PubEnc[("/uart_data")]:::topic
+        SubVel[("/velocity_cmd")]:::topic
+        POdom[("/odom")]:::topic
+        
+        %% Fluxos ROS
+        IMU_Node[IMU]:::hw -->|orientation| HW2
+        HW2 --> POdom
+        POdom -->|/cmd_vel| SubVel
+        SubVel --> CBVel
+        CBVel -->|Variáveis de Controle| UComm
+        
+        UComm --> RL
+        RL -->|x, y, z, timestamp| PubEnc
+        PubEnc -->|Feedback Odometria| HW2
+    end
+
+    subgraph Layer_Serial ["🔌 Comunicação UART"]
+        direction TB
+        S1(("Serial TX (ROS ➡️ ESP)")):::serial
+        S2(("Serial RX (ESP ➡️ ROS)")):::serial
+    end
+
+    subgraph Layer_ESP ["⚡ Camada ESP32 (Microcontrolador)"]
+        direction TB
+        ESP1["ESP32 Core"]:::esp
+        PID["Controle PID"]:::pc
+        
+        %% Funções de Recepção (RX)
+        PByte{"Process Received Byte"}:::func
+        UR{"UART Read"}:::func
+        
+        %% Funções de Envio (TX)
+        US{"UART Send"}:::func
+        SFrame{"UART Send Frame"}:::func
+        
+        %% Fluxo RX no ESP32
+        PByte -->|Vel angular dir.| UR
+        PByte -->|Vel angular esq.| UR
+        PByte -->|Ângulo servo| UR
+        UR --> ESP1
+        ESP1 --> PID
+        
+        %% Fluxo TX no ESP32
+        ESP1 --> US
+        US -->|Total x| SFrame
+        US -->|Total y| SFrame
+        US -->|Total ângulo servo| SFrame
+        US -->|Timestamp| SFrame
+    end
+
+    subgraph Layer_HW ["⚙️ Atuadores"]
+        direction TB
+        M["Motores DC & Servo Motor"]:::hw
+    end
+
+    %% Conexões entre as Camadas (Cross-boundary)
+    UComm -->|Frame Empacotado| S1
+    S1 -->|Byte stream| PByte
+    
+    SFrame -->|Struct: data_to_send_t| S2
+    S2 -->|Buffer| UComm
+    
+    PID -->|PWM| M

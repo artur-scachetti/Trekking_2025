@@ -1,13 +1,23 @@
 #include "hw_interface.hpp"
 #include <cmath>
 
-RobotHWInterface::RobotHWInterface(ros::NodeHandle& nh) : nh(nh), command_timeout_(nh.createTimer(ros::Duration(0.1), &RobotHWInterface::commandTimeoutCallback, this, true, false)) {
-    //cmd_vel_sub = nh.subscribe("cmd_vel", 10, &RobotHWInterface::cmdVelCallback, this);
+RobotHWInterface::RobotHWInterface(ros::NodeHandle& nh) 
+  : nh(nh), 
+    command_timeout_(nh.createTimer(ros::Duration(0.1), 
+                                    &RobotHWInterface::commandTimeoutCallback, 
+                                    this, true, false)) 
+
+    
+    {
+
+    cmd_vel_sub = nh.subscribe("cmd_vel", 10, &RobotHWInterface::cmdVelCallback, this);
     ack_drive_sub = nh.subscribe("/ackermann_cmd", 10, &RobotHWInterface::AckermannDriveCallback, this);
+    imu_sub = nh.subscribe("/imu/data_fused", 10, &RobotHWInterface::imuDataCallback, this);
 
     velocity_command_pub = nh.advertise<robot_control::VelocityData>("velocity_command", 10);
 
-    //encoder_sub = nh.subscribe("/i2c_data", 10, &RobotHWInterface::encoderCallback, this);
+    //encoder_i2c_sub = nh.subscribe("/i2c_data", 10, &RobotHWInterface::encoderCallbackI2C, this);
+    encoder_uart_sub = nh.subscribe("/uart_data", 10, &RobotHWInterface::encoderCallbackUart, this);
     odom_pub = nh.advertise<nav_msgs::Odometry>("odom", 50);
 
     // Initialize parameters
@@ -28,11 +38,26 @@ RobotHWInterface::RobotHWInterface(ros::NodeHandle& nh) : nh(nh), command_timeou
     delta = false;
 }
 
-/*
+
 void RobotHWInterface::cmdVelCallback(const geometry_msgs::Twist::ConstPtr& msg) {
     
+
+    // PARA ACKERMAN 
+    /*
     const float v = msg->linear.x;
     const float omega = msg->angular.z;
+
+    if (std::abs(v) < 1e-5 && std::abs(omega) > 1e-5) {
+        ROS_WARN("Sistema Ackermann: Giro sobre o eixo não permitido.");
+        left_wheel_angular_speed = 0;
+        right_wheel_angular_speed = 0;
+        servo_angle = SERVO_INITIAL_ANGLE; 
+        
+        command_timeout_.stop();
+        command_timeout_.setPeriod(ros::Duration(0.05), true);
+        command_timeout_.start();
+        return;
+    }
 
     double phi;
     double theta_2;
@@ -81,7 +106,66 @@ void RobotHWInterface::cmdVelCallback(const geometry_msgs::Twist::ConstPtr& msg)
     command_timeout_.stop();
     command_timeout_.setPeriod(ros::Duration(0.05), true);
     command_timeout_.start();
-}*/
+
+    */
+
+    
+    // PARA DIFERENCIAL
+
+    const float v = msg->linear.x;
+    const float omega = msg.angular.z;
+
+    command_timeout_.stop();
+    command_timeout_.setPeriod(ros::Duration(0.1), true);
+    command_timeout_.start();
+
+    // Cinemática diferencial:
+    // V_esq = v - (w * L / 2)
+    // V_dir = v + (w * L / 2)
+
+    float left_speed = v - (omega * wheel_separation_width / 2.0);
+    float right_speed = v + (omega * wheel_separation_width / 2.0);
+
+    float left_wheel_angular_speed = left_speed / wheel_radius;
+    float right_wheel_angular_speed = right_speed / wheel_radius;
+
+    servo_angle = SERVO_INITIAL_ANGLE;
+
+}
+
+void RobotHWInterface::imuDataCallback(const sensor_msgs::Imu::ConstPtr& msg) {
+
+    tf::Quaternion q(
+
+        msg->orientation.x,
+        msg->orientation.y,
+        msg->orientation.z,
+        msg->orientation.w
+    );
+
+    tf::Matrix3x3 m(q);
+
+    double roll, pitch, yaw;
+    m.getRPY(roll, pitch, yaw);
+
+    if(!imu_initialized) {
+
+        imu_initial_offset = yaw;
+        imu_initialized = true;
+
+        ROS_INFO("IMU inicializada, Offset de Yaw: %.2f rad", imu_initial_offset);
+    }
+
+    double relative_yaw = yaw - imu_initial_offset;
+
+    while (relative_yaw > M_PI) relative_yaw -= 2 * M_PI;
+    while (relative_yaw < M_PI) relative_yaw += 2 * M_PI;
+
+    imu_yaw = relative_yaw;
+
+    imu_angular_speed_z = msg->angular_velocity_z;
+
+}
 
 void RobotHWInterface::AckermannDriveCallback(const ackermann_msgs::AckermannDrive::ConstPtr& msg) {
     
@@ -146,7 +230,35 @@ void RobotHWInterface::publishWheelSpeeds() {
 }
 
 
-void RobotHWInterface::encoderCallback(const robot_control::I2cData::ConstPtr& msg) {
+void RobotHWInterface::encoderCallbackI2C(const robot_control::I2cData::ConstPtr& msg) {
+
+    ROS_INFO("Callback do encoder ativado!");
+    x = msg->x / 1000;
+    y = msg->y / 1000;
+    th = msg->z / 1000;
+    timestamp = msg->timestamp;
+    
+    if (!delta){
+        x_old = x;
+        y_old = y;
+        th_old = th;
+        timestamp_old = timestamp;
+        delta = true;
+    } else if (delta && timestamp != timestamp_old){
+        vel_linear_x = (x - x_old)/(timestamp - timestamp_old);
+        vel_linear_y = (y - y_old)/(timestamp - timestamp_old);
+        vel_angular_z = (th - th_old)/(timestamp - timestamp_old);
+
+        base_vel_linear = std::hypot(vel_linear_x, vel_linear_y);
+        base_vel_angular = vel_angular_z;
+
+        delta = false;
+    }
+
+    ROS_INFO("x: %f, y: %f, vel_linear_x: %f, vel_linear_y %f", x, y, vel_linear_x, vel_linear_y);
+}
+
+void RobotHWInterface::encoderCallbackUart(const robot_control::UARTData::ConstPtr& msg) {
 
     ROS_INFO("Callback do encoder ativado!");
     x = msg->x / 1000;
@@ -199,7 +311,22 @@ void RobotHWInterface::updateOdometry() {
 
     current_time = ros::Time::now();
 
-    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(th);
+    geometry_msgs::Quaternion odom_quat;
+    double yaw_for_calc = imu_yaw;
+    double angular_vel_for_odom;
+
+    if(imu_initialized) {
+
+        odom_quat = tf::createQuaternionMsgFromYaw(yaw_for_calc);
+        angular_vel_for_odom = imu_angular_speed_z;
+
+    }   else {
+
+        odom_quat = tf::createQuaternionMsgFromYaw(th);
+        angular_vel_for_odom = base_vel_angular;
+    }
+
+    ros::Time current_time = ros::Time::now();
 
     geometry_msgs::TransformStamped odom_trans;
     odom_trans.header.stamp = current_time;
@@ -224,8 +351,8 @@ void RobotHWInterface::updateOdometry() {
 
     odom.child_frame_id = "base_link";
     odom.twist.twist.linear.x = 0;
-    odom.twist.twist.linear.y = base_vel_linear;
-    odom.twist.twist.angular.z = base_vel_angular;
+    odom.twist.twist.linear.y = base_vel_linear; 
+    odom.twist.twist.angular.z = angular_vel_for_odom;
 
     odom_pub.publish(odom);
 

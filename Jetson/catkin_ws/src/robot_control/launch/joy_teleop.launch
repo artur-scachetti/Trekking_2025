@@ -1,6 +1,7 @@
 <launch>
 
   <!--node name="i2c_master" pkg="robot_control" type="i2c_master.py" /--> 
+  <!--node name="uart_comm" pkg="robot_control" type="uart_comm.py"-->
 
  <!-- joy node -->
   <node respawn="true" pkg="joy"

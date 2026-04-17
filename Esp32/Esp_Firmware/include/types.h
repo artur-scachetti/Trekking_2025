@@ -58,6 +58,26 @@
 #define motor_choose_in_primary(motor) ((motor == ESQ) ? INPUT_3 : INPUT_2) //Pino "primário" do motor
 #define motor_choose_in_secundary(motor) ((motor == ESQ) ? INPUT_4 : INPUT_1) //Pino "secundário" do motor
 
+//uart constants and structures
+#define UART_DELAY          4
+#define UART_PORT_NUM       UART_NUM_0
+#define BUF_SIZE            1024
+#define RD_BUF_SIZE         1024
+
+#define FRAME_SOF            0xAA
+#define FRAME_EOF            0xBB
+#define PAYLOAD_SIZE_RX      12
+#define PAYLOAD_SIZE_TX      16
+
+typedef struct {
+
+    int total_x_micrometers;
+    int total_y_micrometers;
+    int total_theta_mmrad;
+    uint32_t timestamp;
+
+} data_to_send_t;
+
 //i2c constants
 #define I2C_DELAY 4
 #define TIMEOUT_MS_WRITE 0.001
